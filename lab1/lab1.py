@@ -62,15 +62,16 @@ def gray2grad(img):
     img_grad_v = np.zeros((height, width))
     img_grad_d1 = np.zeros((height, width))
     img_grad_d2 = np.zeros((height, width))
+    # convert source image to float dtype
     # add extra layer of padding to source image
     img_pad = np.zeros((height + 2 * 1, width + 2 * 1))
     img_pad[1: -1, 1: -1] = img[:, :].astype(float)
-    # iterate over each pixel to compute the gradient components
     # flip the gradient filters before operation
     flipped_sobelh = np.flipud(np.fliplr(sobelh))
     flipped_sobelv = np.flipud(np.fliplr(sobelv))
     flipped_sobeld1 = np.flipud(np.fliplr(sobeld1))
     flipped_sobeld2 = np.flipud(np.fliplr(sobeld2))
+    # iterate over each pixel to compute the gradient components
     for ri in range(height):
         for ci in range(width):
             img_grad_h[ri][ci] = (
@@ -118,8 +119,8 @@ def pad_zeros(img, pad_height_bef, pad_height_aft, pad_width_bef, pad_width_aft)
         img.shape) == 2 else np.zeros((new_height, new_width, img.shape[2]))
 
     ###Your code here###
-    # convert img_pad to uint8 data type
-    img_pad = img_pad.astype(np.uint8)
+    # convert img_pad to source image dtype
+    img_pad = img_pad.astype(img.dtype)
     # apply the source image onto the output image
     img_pad[pad_height_bef: - pad_height_aft,
             pad_width_bef: - pad_width_aft] = img[:, :]
@@ -131,7 +132,7 @@ def pad_zeros(img, pad_height_bef, pad_height_aft, pad_width_bef, pad_width_aft)
 def normalized_cross_correlation(img, template):
     """
     10 points.
-    Implement the cross-correlation operation in a naive 6 nested for-loops. 
+    Implement the cross-correlation operation in a naive 6 nested for-loops.
     The 6 loops include the height, width, channel of the output and height, width and channel of the template.
     :param img: numpy.ndarray.
     :param template: numpy.ndarray.
@@ -143,6 +144,16 @@ def normalized_cross_correlation(img, template):
     Wo = Wi - Wk + 1
 
     ###Your code here###
+    response = np.zeros((Ho, Wo))
+    # iterate over each pixel to compute the gradient components
+    for ri in range(Ho):
+        for ci in range(Wo):
+            for rt in range(Hk):
+                for ct in range(Wk):
+                    response[ri][ci] += (img[ri + rt][ci + ct].astype(float)
+                                         * template[rt][ct]).sum()
+            response[ri][ci] /= (np.linalg.norm(template)
+                                 * np.linalg.norm(img[ri:ri + Hk, ci:ci + Wk].astype(float)))
     ###
     return response
 
@@ -150,7 +161,7 @@ def normalized_cross_correlation(img, template):
 def normalized_cross_correlation_fast(img, template):
     """
     10 points.
-    Implement the cross correlation with 3 nested for-loops. 
+    Implement the cross correlation with 3 nested for-loops.
     The for-loop over the template is replaced with the element-wise multiplication between the kernel and the image regions.
     :param img: numpy.ndarray
     :param template: numpy.ndarray
@@ -162,6 +173,13 @@ def normalized_cross_correlation_fast(img, template):
     Wo = Wi - Wk + 1
 
     ###Your code here###
+    # initialize the output image
+    response = np.zeros((Ho, Wo))
+    # iterate over each pixel to compute the gradient components
+    for ri in range(Ho):
+        for ci in range(Wo):
+            response[ri][ci] = (img[ri:ri + Hk, ci:ci + Wk].astype(float) * template).sum() / (
+                np.linalg.norm(template) * np.linalg.norm(img[ri:ri + Hk, ci:ci + Wk].astype(float)))
     ###
     return response
 
@@ -181,6 +199,23 @@ def normalized_cross_correlation_matrix(img, template):
     Wo = Wi - Wk + 1
 
     ###Your code here###
+    # reshape image and template for matrix multiplication
+    # Fr = np.zeros((Hk * Wk, 1))
+    Pr = np.zeros((Ho * Wo, 3 * Hk * Wk))
+    Kr = template.transpose(2, 0, 1).reshape(-1, 1)
+    Ki = np.full(3 * Hk * Wk, 1, dtype=float).reshape(-1, 1)
+    img_t = img.transpose(2, 0, 1)
+    ro = 0
+    for r in range(Ho):
+        for c in range(Wo):
+            red = img_t[0][r:r+Hk, c:c+Wk].reshape(-1)
+            green = img_t[1][r:r+Hk, c:c+Wk].reshape(-1)
+            blue = img_t[2][r:r+Hk, c:c+Wk].reshape(-1)
+            Pr[ro] = np.concatenate([red, green, blue])
+            ro += 1
+    response = (np.dot(Pr, Kr) /
+                (np.dot(Pr, Ki) * np.linalg.norm(template))
+                ).reshape(Ho, Wo)
     ###
     return response
 
@@ -192,13 +227,13 @@ def non_max_suppression(response, suppress_range, threshold=None):
     10 points
     Implement the non-maximum suppression for translation symmetry detection
     The general approach for non-maximum suppression is as follows:
-        1. Set a threshold τ; values in X<τ will not be considered.  Set X<τ to 0.  
+        1. Set a threshold τ; values in X<τ will not be considered.  Set X<τ to 0.
     2. While there are non-zero values in X
         a. Find the global maximum in X and record the coordinates as a local maximum.
         b. Set a small window of size w×w points centered on the found maximum to 0.
         3. Return all recorded coordinates as the local maximum.
     :param response: numpy.ndarray, output from the normalized cross correlation
-    :param suppress_range: a tuple of two ints (H_range, W_range). 
+    :param suppress_range: a tuple of two ints (H_range, W_range).
                            the points around the local maximum point within this range are set as 0. In this case, there are 2*H_range*2*W_range points including the local maxima are set to 0
     :param threshold: int, points with value less than the threshold are set to 0
     :return res: a sparse response map which has the same shape as response
