@@ -213,8 +213,11 @@ def normalized_cross_correlation_matrix(img, template):
             blue = img_t[2][r:r+Hk, c:c+Wk].reshape(-1)
             Pr[ro] = np.concatenate([red, green, blue])
             ro += 1
-    response = (np.dot(Pr, Kr) /
-                (np.dot(Pr, Ki) * np.linalg.norm(template))
+    Psqr = np.square(Pr)
+    Mw = np.sqrt(np.dot(Psqr, Ki))
+
+    response = (np.dot(Pr, Kr)
+                / (Mw * np.linalg.norm(template))
                 ).reshape(Ho, Wo)
     ###
     return response
