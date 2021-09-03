@@ -201,7 +201,6 @@ def normalized_cross_correlation_matrix(img, template):
 
     ###Your code here###
     # reshape image and template for matrix multiplication
-    # Fr = np.zeros((Hk * Wk, 1))
     Pr = np.zeros((Ho * Wo, 3 * Hk * Wk))
     Kr = template.transpose(2, 0, 1).reshape(-1, 1)
     Ki = np.full(3 * Hk * Wk, 1, dtype=float).reshape(-1, 1)
@@ -243,6 +242,39 @@ def non_max_suppression(response, suppress_range, threshold=None):
     :return res: a sparse response map which has the same shape as response
     """
     ###Your code here###
+    if threshold is None:
+        threshold = 0.85
+
+    Hr, Wr = response.shape[:2]
+    Hs, Ws = suppress_range
+
+    # 1. Set X < threshold to 0
+    X = np.where(response < threshold, 0, response)
+    res = np.zeros((Hr, Wr), dtype=float)
+
+    # 2. While there are non-zero values in X
+    global_max = np.max(X)
+    while global_max != 0:
+        # a. Find the global maximum in X and record the coordinates as a local maximum.
+        max_rows, max_cols = np.where(global_max == X)
+
+        row = max_rows[0]
+        col = max_cols[0]
+
+        max_rows = np.delete(max_rows, 0)
+        max_cols = np.delete(max_cols, 0)
+
+        res[row, col] = 1
+
+        # b. Set a small window of size w×w points centered on the found maximum to 0.
+        row_bottom = max(0, row - Hs)
+        row_top = min(Hr - 1, row + Hs)
+        col_left = max(0, col - Ws)
+        col_right = min(Wr - 1, col + Ws)
+        X[row_bottom: row_top +
+            1, col_left: col_right + 1] = 0
+
+        global_max = np.max(X)
     ###
     return res
 
@@ -266,15 +298,19 @@ def normalized_cross_correlation_ms(img, template):
     ###Your code here###
     response = np.zeros((Ho, Wo))
     # iterate over each pixel to compute the gradient components
+    template_t = template.copy().astype(float).transpose(2, 0, 1)
+    for j in range(3):
+        template_t[j] = template_t[j] - template_t[j].mean()
+    ms_template = template_t.transpose(1, 2, 0)
     for ri in range(Ho):
         for ci in range(Wo):
             window = img[ri:ri + Hk, ci:ci + Wk].astype(float)
+            window_t = window.transpose(2, 0, 1)
             for i in range(3):
-                window[:, :, i] -= window[:, :, i].mean()
-            for i in range(3):
-                template[:, :, i] -= template[:, :, i].mean()
-            response[ri][ci] = (window * template).sum() / (
-                np.linalg.norm(window) * np.linalg.norm(template))
+                window_t[i] = window_t[i] - window_t[i].mean()
+            window = window_t.transpose(1, 2, 0)
+            response[ri][ci] = (window * ms_template).sum() / (
+                np.linalg.norm(window) * np.linalg.norm(ms_template))
     ###
     return response
 
