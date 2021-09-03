@@ -178,8 +178,9 @@ def normalized_cross_correlation_fast(img, template):
     # iterate over each pixel to compute the gradient components
     for ri in range(Ho):
         for ci in range(Wo):
-            response[ri][ci] = (img[ri:ri + Hk, ci:ci + Wk].astype(float) * template).sum() / (
-                np.linalg.norm(template) * np.linalg.norm(img[ri:ri + Hk, ci:ci + Wk].astype(float)))
+            window = img[ri:ri + Hk, ci:ci + Wk].astype(float)
+            response[ri][ci] = (window * template).sum() / (
+                np.linalg.norm(template) * np.linalg.norm(window))
     ###
     return response
 
@@ -263,6 +264,17 @@ def normalized_cross_correlation_ms(img, template):
     Wo = Wi - Wk + 1
 
     ###Your code here###
+    response = np.zeros((Ho, Wo))
+    # iterate over each pixel to compute the gradient components
+    for ri in range(Ho):
+        for ci in range(Wo):
+            window = img[ri:ri + Hk, ci:ci + Wk].astype(float)
+            for i in range(3):
+                window[:, :, i] -= window[:, :, i].mean()
+            for i in range(3):
+                template[:, :, i] -= template[:, :, i].mean()
+            response[ri][ci] = (window * template).sum() / (
+                np.linalg.norm(window) * np.linalg.norm(template))
     ###
     return response
 
