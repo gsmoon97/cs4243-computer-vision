@@ -28,7 +28,7 @@ def make_gaussian_kernel(ksize, sigma):
     min_x = min_y = - (ksize // 2)  # -3 for 6 and 7
     max_x = max_y = - (-ksize // 2) - 1  # 2 for 6 # 3 for 7
     x_coordinates, y_coordinates = np.mgrid[min_y:max_y + 1, min_x:max_x + 1]
-    kernel = np.exp((x_coordinates ** 2 + y_coordinates ** 2) /
+    kernel = np.exp(((x_coordinates - np.mean(x_coordinates)) ** 2 + (y_coordinates - np.mean(y_coordinates)) ** 2) /
                     (-2.0 * (sigma ** 2)))
     # END
 
@@ -170,7 +170,18 @@ def estimate_gradients(original_img, display=True):
  
     This is because x direction is the downward line.
     '''
-
+    sobel_h = np.array([[-1, 0, 1],
+                       [-2, 0, 2],
+                       [-1, 0, 1]], dtype=float)
+    sobel_v = np.array([[-1, -2, -1],
+                       [0, 0, 0],
+                       [1, 2, 1]], dtype=float)
+    # divide intensity value of each pixel by 255 to prevent overflow
+    normalized_img = original_img / 255
+    dx = cs4243_filter(normalized_img, sobel_v)
+    dy = cs4243_filter(normalized_img, sobel_h)
+    d_mag = np.sqrt(dx ** 2 + dy ** 2)
+    d_angle = np.arctan2(dx, dy)
     # END
     if display:
 
@@ -231,7 +242,20 @@ def non_maximum_suppression(d_mag, d_angle, display=True):
     d_angle_180 = d_angle * 180/np.pi
 
     # YOUR CODE HERE
-
+    height, width = d_angle_180.shape
+    # ignore pixels in image borders
+    for i in range(1, height - 1):
+        for j in range(1, width - 1):
+            if -22.5 <= d_angle_180[i][j] < 22.5 or d_angle_180[i][j] < -157.5 or 157.5 <= d_angle_180[i][j]:
+                offset = (0, 1)
+            elif 22.5 <= d_angle_180[i][j] < 67.5 or -157.5 <= d_angle_180[i][j] < -112.5:
+                offset = (1, 1)
+            elif 67.5 <= d_angle_180[i][j] < 112.5 or -112.5 <= d_angle_180[i][j] < -67.5:
+                offset = (1, 0)
+            elif 112.5 <= d_angle_180[i][j] < 157.5 or -67.5 <= d_angle_180[i][j] < 22.5:
+                offset = (1, -1)
+            if d_mag[i][j] > d_mag[i + offset[0]][j + offset[1]] and d_mag[i][j] > d_mag[i - offset[0]][j - offset[1]]:
+                out[i][j] = d_mag[i][j]
     # END
     if display:
         _ = plt.figure(figsize=(10, 10))
@@ -255,7 +279,28 @@ def non_maximum_suppression_interpol(d_mag, d_angle, display=True):
     d_angle_180 = d_angle * 180/np.pi
 
     # YOUR CODE HERE
-
+    height, width = d_angle_180.shape
+    # ignore pixels in image borders
+    for i in range(1, height - 1):
+        for j in range(1, width - 1):
+            if 0.0 <= d_angle_180[i][j] < 45.0 or d_angle_180[i][j] < -135.0:
+                offset_1 = (0, 1)
+                offset_2 = (1, 1)
+            elif 45.0 <= d_angle_180[i][j] < 90.0 or -135.0 <= d_angle_180[i][j] < -90.0:
+                offset_1 = (1, 1)
+                offset_2 = (1, 0)
+            elif 90.0 <= d_angle_180[i][j] < 135.0 or -90.0 <= d_angle_180[i][j] < -45.0:
+                offset_1 = (1, 0)
+                offset_2 = (1, -1)
+            elif 135.0 <= d_angle_180[i][j] or -45.0 <= d_angle_180[i][j] < 0.0:
+                offset_1 = (1, -1)
+                offset_2 = (1, 1)
+            value_a = math.tan(d_angle[i][j]) * (d_mag[i + offset_2[0]][j + offset_2[1]]
+                                                 - d_mag[i + offset_1[0]][j + offset_2[1]]) + d_mag[i + offset_1[0]][j + offset_2[1]]
+            value_b = math.tan(d_angle[i][j]) * (d_mag[i - offset_2[0]][j - offset_2[1]]
+                                                 - d_mag[i - offset_1[0]][j - offset_2[1]]) + d_mag[i - offset_1[0]][j - offset_2[1]]
+            if d_mag[i][j] > value_a and d_mag[i][j] > value_b:
+                out[i][j] = d_mag[i][j]
     # END
     if display:
         _ = plt.figure(figsize=(10, 10))
