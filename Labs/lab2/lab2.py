@@ -330,7 +330,21 @@ def double_thresholding(inp, perc_weak=0.1, perc_strong=0.3, display=True):
     weak_edges = strong_edges = None
 
     # YOUR CODE HERE
-
+    # initialize variables for thresholding
+    max_val = np.amax(inp)
+    min_val = np.amin(inp)
+    delta = max_val - min_val
+    high_threshold = min_val + perc_strong * delta
+    low_threshold = min_val + perc_weak * delta
+    # highter than high threshold
+    strong_row, strong_col = np.where(inp > high_threshold)
+    strong_edges = np.zeros(inp.shape, np.bool)
+    strong_edges[strong_row, strong_col] = True
+    # between high threshold and low threshold
+    weak_row, weak_col = np.where(
+        (high_threshold > inp) & (inp > low_threshold))
+    weak_edges = np.zeros(inp.shape, np.bool)
+    weak_edges[weak_row, weak_col] = True
     # END
 
     if display:
@@ -372,11 +386,42 @@ def edge_linking(weak, strong, n=200, display=True):
     out = None
 
     # YOUR CODE HERE
-
+    # height, width = strong.shape
+    # for i in range(1, height):
+    #     for j in range(1, width):
+    #         pass
+    height, width = strong.shape
+    for _ in range(n):
+        top_left = np.copy(strong)
+        np.roll(np.roll(top_left, 1, axis=0), 1)
+        top = np.copy(strong)
+        np.roll(top, 1, axis=0)
+        top_right = np.copy(strong)
+        np.roll(np.roll(top_right, 1, axis=0), -1)
+        left = np.copy(strong)
+        np.roll(left, 1)
+        right = np.copy(strong)
+        np.roll(right, -1)
+        bottom_left = np.copy(strong)
+        np.roll(np.roll(bottom_left, -1, axis=0), 1)
+        bottom = np.copy(strong)
+        np.roll(bottom, -1, axis=0)
+        bottom_right = np.copy(strong)
+        np.roll(np.roll(bottom_right, -1, axis=0), -1)
+        surrounding = sum([top_left, top, top_right, left, right,
+                           bottom_left, bottom, bottom_right])
+        # ignore pixels in image borders
+        for i in range(1, height - 1):
+            for j in range(1, width - 1):
+                if weak[i][j]:
+                    if surrounding[i][j]:
+                        strong[i][j] = True
+                        weak[i][j] = False
+    out = strong
     # END
     if display:
         _ = plt.figure(figsize=(10, 10))
-        plt.imshow(s)
+        plt.imshow(out)
         plt.title("Edge image")
     return out
 
@@ -398,9 +443,26 @@ def hough_vote_lines(img):
     :return thetas: theta values array
     '''
     # YOUR CODE HERE
-
+    # initalize the variables for hough transform
+    height, width = img.shape
+    t_max = 1.0 * math.pi
+    t_min = 0.0
+    t_num = 180
+    r_max = math.ceil(math.hypot(height, width))
+    r_min = -1 * r_max
+    r_num = 2 * r_max
+    thetas = np.linspace(t_min, t_max, t_num, endpoint=False)
+    distances = np.linspace(r_min, r_max, r_num, endpoint=False, dtype=int)
+    A = np.zeros((r_num, t_num), int)
+    for x in range(0, height):
+        for y in range(0, width):
+            # consider only for edge points
+            if img[x][y]:
+                for t_idx, t in enumerate(thetas):
+                    r = math.floor(x * math.cos(t) + y * math.sin(t))
+                    r_idx = distances[r + r_max]
+                    A[r_idx, t_idx] += 1
     # END
-
     return A, distances, thetas
 
 
