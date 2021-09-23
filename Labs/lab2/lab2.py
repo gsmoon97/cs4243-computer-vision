@@ -4,7 +4,7 @@ import math
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
-from matplotlib import cm
+from matplotlib import cm, patches
 
 
 ##################### TASK 1 ###################
@@ -122,7 +122,7 @@ def estimate_gradients(original_img, display=True):
 
     1. Compute dx and dy, responses to the vertical and horizontal Sobel kernel. Make use of the cs4243_filter function.
 
-    2. Compute the gradient magnitude which is equal to sqrt(dx^2 + dy^2) 
+    2. Compute the gradient magnitude which is equal to sqrt(dx^2 + dy^2)
 
     3. Compute the gradient orientation using the following formula:
         gradient = atan2(dy/dx)
@@ -131,8 +131,8 @@ def estimate_gradients(original_img, display=True):
 
     Note that our axis choice is as follows:
             --> y
-            |   
-            ↓ x    
+            |
+            ↓ x
     Where img[x,y] denotes point on the image at coordinate (x,y)
 
     :param original_img: original grayscale image
@@ -148,26 +148,26 @@ def estimate_gradients(original_img, display=True):
     # YOUR CODE HERE
     '''
     HINT:
-    In the lecture, 
-    
+    In the lecture,
+
     Sx =  1  0 -1
           2  0 -2
           1  0 -1
-          
+
     Sy =  1  2  1
           0  0  0
          -1 -2 -1
-         
+
     Here:
-    
+
     Kx = [[ 1,  2,  1],
           [ 0,  0,  0],
           [-1, -2, -1]]
-    
+
     Ky = [[ 1,  0, -1],
           [ 2,  0, -2],
           [ 1,  0, -1]]
- 
+
     This is because x direction is the downward line.
     '''
     sobel_h = np.array([[-1, 0, 1],
@@ -213,23 +213,23 @@ def non_maximum_suppression(d_mag, d_angle, display=True):
     '''
     Perform non-maximum suppression on the gradient magnitude matrix without interpolation.
     Split the range -180° ~ 180° into 8 even ranges. For each pixel, determine which range the gradient
-    orientation belongs to and pick the corresponding two pixels from the adjacent eight pixels surrounding 
+    orientation belongs to and pick the corresponding two pixels from the adjacent eight pixels surrounding
     that pixel. Keep the pixel if its value is larger than the other two.
     Do note that the coordinate system is as below and angular measurements are clockwise.
-    ----------→ y  
+    ----------→ y
     |
     |
     |
     |        x X x
-    ↓ x       \|/   
-             x-o-x  
-              /|\    
-             x X x 
+    ↓ x       \|/
+             x-o-x
+              /|\
+             x X x
          -22.5 0 22.5
 
     For instance, in the example above if the orientation at the coordinate of interest (x,y) is 20°, it belongs to the -22.5°~22.5° range, and the two pixels to be compared with are at (x+1,y) and (x-1,y) (aka the two big X's). If the angle was instead 40°, it belongs to the 22.5°-67.5° and the two pixels we need to consider will be (x+1, y+1) and (x-1,y-1)
 
-    There are only 4 sets of offsets: (0,1), (1,0), (1,1), and (1,-1), since to find the second pixel offset you just need 
+    There are only 4 sets of offsets: (0,1), (1,0), (1,1), and (1,-1), since to find the second pixel offset you just need
     to multiply the first tuple by -1.
 
     :param d_mag: gradient magnitudes matrix
@@ -317,7 +317,7 @@ def double_thresholding(inp, perc_weak=0.1, perc_strong=0.3, display=True):
     Perform double thresholding. Use on the output of NMS. The high and low thresholds are computed as follow:
 
     delta = max_val - min_val
-    high_threshold = min_val + perc_strong * delta 
+    high_threshold = min_val + perc_strong * delta
     low_threshold = min_val + perc_weak * delta
 
     perc_weak being 0 is possible
@@ -366,7 +366,7 @@ def double_thresholding(inp, perc_weak=0.1, perc_strong=0.3, display=True):
 
 def edge_linking(weak, strong, n=200, display=True):
     '''
-    Perform edge-linking on two binary weak and strong edge images. 
+    Perform edge-linking on two binary weak and strong edge images.
     A weak edge pixel is linked if any of its eight surrounding pixels is a strong edge pixel.
     You may want to avoid using loops directly due to the high computational cost. One possible trick is to generate
     8 2D arrays from the strong edge image by offseting and sum them together; entries larger than 0 mean that at least one surrounding
@@ -451,11 +451,14 @@ def hough_vote_lines(img):
     r_max = math.ceil(math.hypot(height, width))
     r_min = -1 * r_max
     r_num = 2 * r_max
+    # quantize parameter space
     thetas = np.linspace(t_min, t_max, t_num, endpoint=False)
     distances = np.linspace(r_min, r_max, r_num, endpoint=False, dtype=int)
+    # create accumulator array
     A = np.zeros((r_num, t_num), int)
-    for x in range(0, height):
-        for y in range(0, width):
+    # iterate through all edge points
+    for x in range(height):
+        for y in range(width):
             # consider only for edge points
             if img[x][y]:
                 for t_idx, t in enumerate(thetas):
@@ -484,7 +487,7 @@ def find_peak_params(hspace, params_list,  window_size=1, threshold=0.5):
     [3,   40,  21],
     [0,   1.603, 1.605]
     ]
-    This means that the local maxima with the highest vote gets a vote score of 122, and the corresponding parameter value is distance=3, 
+    This means that the local maxima with the highest vote gets a vote score of 122, and the corresponding parameter value is distance=3,
     theta = 0.
     '''
     assert len(hspace.shape) == len(params_list), \
@@ -514,8 +517,8 @@ def hough_vote_circles(img, radius=None):
     We also accept a range of radii to save computation costs. If the radius range is not given, it is default to
     [3, diagonal of the circle]. This parameter is very useful for your experimentation later on (e.g. if there are only large circles then you don't have to keep R_min very small).
 
-    Hint: You can use the function circle_perimeter to make a circular mask. Center the mask over the accumulator array and increment the array. In this case, you will have to pad the accumulator array first, and clip it afterwards. 
-    Remember that the return accumulator array should have matching dimension with the lengths of the parameter ranges. 
+    Hint: You can use the function circle_perimeter to make a circular mask. Center the mask over the accumulator array and increment the array. In this case, you will have to pad the accumulator array first, and clip it afterwards.
+    Remember that the return accumulator array should have matching dimension with the lengths of the parameter ranges.
 
     The dimensions of the accumulator array should be in this order: radius, x-coordinate, y-coordinate.
 
@@ -536,7 +539,21 @@ def hough_vote_circles(img, radius=None):
         [R_min, R_max] = radius
 
     # YOUR CODE HERE
-
+    # initalize the variables for hough transform
+    # quantize parameter space
+    R = np.arange(R_min, R_max + 1)
+    X = np.arange(h)
+    Y = np.arange(w)
+    # create accumulator array
+    A = np.zeros((len(R), len(X), len(Y)), int)
+    # iterate through all edge points
+    for x in range(h):
+        for y in range(w):
+            # consider only for edge points
+            if img[x][y]:
+                for r_idx, r in enumerate(R):
+                    xx, yy = circle_perimeter(x, y, r, shape=img.shape)
+                    A[r_idx, xx, yy] += 1
     # END
 
     return A, R, X, Y
@@ -573,7 +590,31 @@ def hough_vote_circles_grad(img, d_angle, radius=None):
         [R_min, R_max] = radius
 
     # YOUR CODE HERE
-
+    # initalize the variables for hough transform
+    # quantize parameter space
+    R = np.arange(R_min, R_max + 1)
+    X = np.arange(h)
+    Y = np.arange(w)
+    # create accumulator array
+    A = np.zeros((len(R), len(X), len(Y)), int)
+    # A = np.pad(np.zeros((len(R), len(X), len(Y)), int),
+    #            ((0, 0), (R_max, R_max), (R_max, R_max)))
+    # iterate through all edge points
+    for x in range(h):
+        for y in range(w):
+            # consider only for edge points
+            if img[x][y]:
+                for r_idx, r in enumerate(R):
+                    theta = d_angle[x][y]
+                    xx_1 = math.floor(x + r * math.cos(theta))
+                    yy_1 = math.floor(y + r * math.sin(theta))
+                    if 0 <= xx_1 < h and 0 <= yy_1 < w:
+                        A[r_idx, xx_1, yy_1] += 1
+                    xx_2 = math.floor(x - r * math.cos(theta))
+                    yy_2 = math.floor(y - r * math.sin(theta))
+                    if 0 <= xx_2 < h and 0 <= yy_2 < w:
+                        A[r_idx, xx_2, yy_2] += 1
+    # A = A[:, R_max:-R_max, R_max:-R_max]
     # END
     return A, R, X, Y
 
@@ -630,12 +671,21 @@ def draw_lines(hspace, dists, thetas, hs_maxima, file_path):
 
 
 def draw_circles(local_maxima, file_path, title):
+    # img = cv2.imread(file_path)
+    # fig = plt.figure(figsize=(7, 7))
+    # plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    # circle = []
+    # for _, r, x, y in zip(*local_maxima):
+    #     circle.append(plt.Circle((y, x), r, color=(1, 0, 0), fill=False))
+    #     fig.add_subplot(111).add_artist(circle[-1])
+    # plt.title(title)
+    # plt.show()
     img = cv2.imread(file_path)
-    fig = plt.figure(figsize=(7, 7))
-    plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-    circle = []
+    fig, axes = plt.subplots(1, figsize=(7, 7))
+    axes.set_aspect('equal')
+
+    axes.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     for _, r, x, y in zip(*local_maxima):
-        circle.append(plt.Circle((y, x), r, color=(1, 0, 0), fill=False))
-        fig.add_subplot(111).add_artist(circle[-1])
+        axes.add_patch(patches.Circle((y, x), r, color=(1, 0, 0), fill=False))
     plt.title(title)
     plt.show()
