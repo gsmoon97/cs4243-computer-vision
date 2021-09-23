@@ -460,7 +460,7 @@ def hough_vote_lines(img):
             if img[x][y]:
                 for t_idx, t in enumerate(thetas):
                     r = math.floor(x * math.cos(t) + y * math.sin(t))
-                    r_idx = distances[r + r_max]
+                    r_idx = r + r_max
                     A[r_idx, t_idx] += 1
     # END
     return A, distances, thetas
