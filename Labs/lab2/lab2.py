@@ -592,13 +592,15 @@ def hough_vote_circles_grad(img, d_angle, radius=None):
     # YOUR CODE HERE
     # initalize the variables for hough transform
     # quantize parameter space
-    R = np.arange(R_min, R_max + 1)
-    X = np.arange(h)
-    Y = np.arange(w)
+    interval = 1
+    R_dim = (R_max - R_min) // interval
+    X_dim = h // interval
+    Y_dim = w // interval
+    R = np.linspace(R_min, R_max, R_dim, endpoint=False, dtype=int)
+    X = np.linspace(0, h, X_dim, endpoint=False, dtype=int)
+    Y = np.linspace(0, w, Y_dim, endpoint=False, dtype=int)
     # create accumulator array
     A = np.zeros((len(R), len(X), len(Y)), int)
-    # A = np.pad(np.zeros((len(R), len(X), len(Y)), int),
-    #            ((0, 0), (R_max, R_max), (R_max, R_max)))
     # iterate through all edge points
     for x in range(h):
         for y in range(w):
@@ -606,15 +608,15 @@ def hough_vote_circles_grad(img, d_angle, radius=None):
             if img[x][y]:
                 for r_idx, r in enumerate(R):
                     theta = d_angle[x][y]
-                    xx_1 = math.floor(x + r * math.cos(theta))
-                    yy_1 = math.floor(y + r * math.sin(theta))
-                    if 0 <= xx_1 < h and 0 <= yy_1 < w:
+                    xx_1 = math.floor(x + r * math.sin(theta)) // interval
+                    yy_1 = math.floor(y + r * math.cos(theta)) // interval
+                    # consider out of index pixels
+                    if 0 <= xx_1 < X_dim and 0 <= yy_1 < Y_dim:
                         A[r_idx, xx_1, yy_1] += 1
-                    xx_2 = math.floor(x - r * math.cos(theta))
-                    yy_2 = math.floor(y - r * math.sin(theta))
-                    if 0 <= xx_2 < h and 0 <= yy_2 < w:
+                    xx_2 = math.floor(x - r * math.sin(theta)) // interval
+                    yy_2 = math.floor(y - r * math.cos(theta)) // interval
+                    if 0 <= xx_2 < X_dim and 0 <= yy_2 < Y_dim:
                         A[r_idx, xx_2, yy_2] += 1
-    # A = A[:, R_max:-R_max, R_max:-R_max]
     # END
     return A, R, X, Y
 
@@ -683,7 +685,6 @@ def draw_circles(local_maxima, file_path, title):
     img = cv2.imread(file_path)
     fig, axes = plt.subplots(1, figsize=(7, 7))
     axes.set_aspect('equal')
-
     axes.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     for _, r, x, y in zip(*local_maxima):
         axes.add_patch(patches.Circle((y, x), r, color=(1, 0, 0), fill=False))
