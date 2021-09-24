@@ -386,10 +386,6 @@ def edge_linking(weak, strong, n=200, display=True):
     out = None
 
     # YOUR CODE HERE
-    # height, width = strong.shape
-    # for i in range(1, height):
-    #     for j in range(1, width):
-    #         pass
     height, width = strong.shape
     for _ in range(n):
         top_left = np.copy(strong)
@@ -592,7 +588,7 @@ def hough_vote_circles_grad(img, d_angle, radius=None):
     # YOUR CODE HERE
     # initalize the variables for hough transform
     # quantize parameter space
-    interval = 1
+    interval = 5
     R_dim = (R_max - R_min) // interval
     X_dim = h // interval
     Y_dim = w // interval
@@ -617,6 +613,8 @@ def hough_vote_circles_grad(img, d_angle, radius=None):
                     yy_2 = math.floor(y - r * math.cos(theta)) // interval
                     if 0 <= xx_2 < X_dim and 0 <= yy_2 < Y_dim:
                         A[r_idx, xx_2, yy_2] += 1
+                        # give more weightage of votes for circles with smaller radii
+                        # A[r_idx, xx_2, yy_2] += (1 * (R_max - r))
     # END
     return A, R, X, Y
 
