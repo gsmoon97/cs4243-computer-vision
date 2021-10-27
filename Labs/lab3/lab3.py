@@ -1,3 +1,4 @@
+from skimage import feature
 from skimage.feature import peak_local_max
 import numpy as np
 from skimage import filters
@@ -8,7 +9,7 @@ from scipy.ndimage import gaussian_filter
 import math
 
 # REMOVE THIS
-from cv2 import findHomography
+from cv2 import findHomography, threshold
 
 from utils import pad, unpad
 
@@ -94,7 +95,7 @@ def naive_descriptor(patch):
     feature = []
     # YOUR CODE HERE
     # normalize the intensity values of the patch into a standard normal distribution
-    normalized_patch = (patch - patch.mean) / (patch.std + 0.0001)
+    normalized_patch = (patch - patch.mean()) / (patch.std() + 0.0001)
     # flatten the normalized patch
     flattened_normalized_patch = normalized_patch.flatten()
     feature = flattened_normalized_patch
@@ -182,24 +183,29 @@ def simple_sift(patch):
     d_y = filters.sobel_h(patch)
     # weigh the gradient magintude with the Gaussian kernel
     weighted_d_mag = np.sqrt(d_x ** 2 + d_y ** 2) * weights
-    d_ori = np.arctan2(d_x, d_y)
+    d_ori = np.arctan2(d_y, d_x)
     # split the patch into 16 cells of 4 x 4 pixels
     # for each cell, compute the histogram, based on the gradient magnitude and orientation
-    row_offset = 0
-    col_offset = 0
     for row_offset in range(3):
         for col_offset in range(3):
-            for i in range(3):
-                for j in range(3):
+            for i in range(4):
+                for j in range(4):
                     orientation = d_ori[row_offset * 4 + i][col_offset * 4 + j]
-                    bin_idx = orientation // (math.pi / 4)
+                    if orientation < 0:
+                        orientation += 2 * math.pi
+                    bin_idx = int(orientation / (math.pi / 4))
+                    # handle special case when orientation is 2 * pi
+                    if bin_idx == 8:
+                        bin_idx = 7
                     weighted_magnitude = weighted_d_mag[
                         row_offset * 4 + i][col_offset * 4 + j]
-                    histogram[row_offset + i][col_offset + j]
-                    [bin_idx] += weighted_magnitude
-                    # append the histograms into 128 dimensions
-                    # normalize to unit length
-                    # END
+                    histogram[row_offset][col_offset][bin_idx] += weighted_magnitude
+    # append the histograms into 128 dimensions
+    flattened_histogram = histogram.flatten()
+    # normalize to unit length
+    feature = flattened_histogram / \
+        np.linalg.norm(flattened_histogram)
+    # END
     return feature
 
 # 1.3 IMPLEMENT
@@ -219,7 +225,11 @@ def top_k_matches(desc1, desc2, k=2):
     match_pairs = []
 
     # YOUR CODE HERE
-
+    distances = cdist(desc1, desc2, 'euclidean')
+    for d1_idx, d1_distances in enumerate(distances):
+        k_nearest_d2_indices = (d1_distances).argsort()[:k]
+        match_pairs.append([d1_idx, [[d2_idx, d1_distances[d2_idx]]
+                           for d2_idx in k_nearest_d2_indices]])
     # END
     return match_pairs
 
@@ -249,7 +259,11 @@ def ratio_test_match(desc1, desc2, match_threshold):
     match_pairs = []
     top_2_matches = top_k_matches(desc1, desc2)
     # YOUR CODE HERE
-
+    for pair in top_2_matches:
+        match1 = pair[1][0]
+        match2 = pair[1][1]
+        if (match1[1] / match2[1]) < match_threshold:
+            match_pairs.append([pair[0], match1[0]])
     # END
     # Modify this line as you wish
     match_pairs = np.array(match_pairs)
