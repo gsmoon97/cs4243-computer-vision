@@ -340,7 +340,42 @@ def compute_homography(src, dst):
     h_matrix = np.eye(3, dtype=np.float64)
 
     # YOUR CODE HERE
-
+    # normalize source coordinates and destination coordinates
+    src_mean_x, src_mean_y = src.mean(axis=0)
+    src_std_x, src_std_y = src.std(axis=0) / np.sqrt(2)
+    src_normalization_matrix = np.array([[1/src_std_x, 0, -src_mean_x / src_std_x],
+                                         [0, 1/src_std_y, -src_mean_y/src_std_y],
+                                         [0, 0, 1]])
+    normalized_src = transform_homography(src, src_normalization_matrix)
+    # normalize destination coordinates
+    dst_mean_x, dst_mean_y = dst.mean(axis=0)
+    dst_std_x, dst_std_y = dst.std(axis=0) / np.sqrt(2)
+    dst_normalization_matrix = np.array([[1/dst_std_x, 0, -dst_mean_x / dst_std_x],
+                                         [0, 1/dst_std_y, -dst_mean_y/dst_std_y],
+                                         [0, 0, 1]])
+    normalized_dst = transform_homography(dst, dst_normalization_matrix)
+    # re-write each matched pair in matrix form and stack into a single matrix A
+    no_of_src = normalized_src.shape[0]
+    no_of_dst = normalized_dst.shape[0]
+    A = []
+    assert no_of_src == no_of_dst, 'Number of points should be the same for both images'
+    for match_idx in range(no_of_src):
+        src_point = normalized_src[match_idx]
+        src_point_x = src_point[0]
+        src_point_y = src_point[1]
+        dst_point = normalized_dst[match_idx]
+        dst_point_x = dst_point[0]
+        dst_point_y = dst_point[1]
+        A.append([-src_point_x, -src_point_y, -1, 0, 0, 0,
+                 src_point_x * dst_point_x, src_point_y * dst_point_x, dst_point_x])
+        A.append([0, 0, 0, -src_point_x, -src_point_y, -1,
+                 src_point_x * dst_point_y, src_point_y * dst_point_y, dst_point_y])
+    A = np.array(A)
+    # use singular value decomposition (SVD) on matrix A to find matrix H
+    u, s, vh = np.linalg.svd(A)
+    # denormalize the matrix H
+    h_matrix = np.linalg.inv(
+        dst_normalization_matrix) @ vh[-1].reshape(3, 3) @ src_normalization_matrix
     # END
 
     return h_matrix
@@ -382,7 +417,24 @@ def ransac_homography(keypoints1, keypoints2, matches, sampling_ratio=0.5, n_ite
 
     # RANSAC iteration start
     # YOUR CODE HERE
-
+    final_h = None
+    # select random set of matches
+    # for n in range(n_iters):
+    sample_indices = np.random.choice(N, n_samples, replace=False)
+    sample_src = matched1_unpad[sample_indices]
+    sample_dst = matched2_unpad[sample_indices]
+    # compute affine transformation matrix
+    h_matrix = compute_homography(sample_src, sample_dst)
+    # compute inliners
+    print(n_samples)
+    predicted_dst = transform_homography(sample_src, h_matrix)
+    for sample_idx in range(n_samples):
+        distance = np.linalg.norm(
+            predicted_dst[sample_idx] - sample_dst[sample_idx])
+        print(distance)
+        if distance < delta:
+            n_inliers += 1
+    print(n_inliers)
     # END YOUR CODE
     return H, matches[max_inliers]
 
