@@ -417,7 +417,6 @@ def ransac_homography(keypoints1, keypoints2, matches, sampling_ratio=0.5, n_ite
 
     # RANSAC iteration start
     # YOUR CODE HERE
-    max_n_inliners = 0
     # select random set of matches
     for _ in range(n_iters):
         inliers = []
@@ -563,7 +562,19 @@ def shift_sift_descriptor(desc):
        [ 50.,   4.,   0.,   0.,   0.,   0.,   0.,   0.]]
     '''
     # YOUR CODE HERE
-
+    # reverse each histogram (0th index (dominant orientation) is fixed)
+    two_d_desc = desc.copy().reshape((16, 8))
+    # for hist_idx in range(len(two_d_desc)):
+    #     two_d_desc[hist_idx][1:] = two_d_desc[hist_idx][:0:-1]
+    mir_desc = np.zeros((16, 8))
+    # flip histograms over vertical axis
+    for idx, row in enumerate(two_d_desc):
+        scale = 3 - (idx // 4)
+        offset = idx % 4
+        row[1:] = row[:0:-1]
+        mir_desc[scale * 4 + offset] = np.array(row)
+    # reshape to 128 dimension
+    res = mir_desc.flatten()
     # END
     return res
 
@@ -577,7 +588,8 @@ def create_mirror_descriptors(img):
     Make sure the virtual descriptors correspond to the original set of descriptors.
     '''
     # YOUR CODE HERE
-
+    kps, descs, angles, sizes = compute_cv2_descriptor(img)
+    mir_descs = np.array([shift_sift_descriptor(desc) for desc in descs])
     # END
     return kps, descs, sizes, angles, mir_descs
 
@@ -594,7 +606,21 @@ def match_mirror_descriptors(descs, mirror_descs, threshold=0.7):
 
     match_result = []
     # YOUR CODE HERE
-
+    # eliminate mirror descriptors that come from the same corresponding keypoints
+    for desc_idx, match in enumerate(three_matches):
+        new_match = []
+        for old_match in match[1]:
+            if old_match[0] != desc_idx:
+                new_match.append(old_match)
+        three_matches[desc_idx][1] = new_match
+    # perform ratio test on processed mirror descriptors
+    match_result = []
+    for pair in three_matches:
+        match1 = pair[1][0]
+        match2 = pair[1][1]
+        if (match1[1] / match2[1]) < threshold:
+            match_result.append([pair[0], match1[0]])
+    match_result = np.array(match_result)
     # END
     return match_result
 
