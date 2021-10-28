@@ -417,24 +417,31 @@ def ransac_homography(keypoints1, keypoints2, matches, sampling_ratio=0.5, n_ite
 
     # RANSAC iteration start
     # YOUR CODE HERE
-    final_h = None
+    max_n_inliners = 0
     # select random set of matches
-    # for n in range(n_iters):
-    sample_indices = np.random.choice(N, n_samples, replace=False)
-    sample_src = matched1_unpad[sample_indices]
-    sample_dst = matched2_unpad[sample_indices]
-    # compute affine transformation matrix
-    h_matrix = compute_homography(sample_src, sample_dst)
-    # compute inliners
-    print(n_samples)
-    predicted_dst = transform_homography(sample_src, h_matrix)
-    for sample_idx in range(n_samples):
-        distance = np.linalg.norm(
-            predicted_dst[sample_idx] - sample_dst[sample_idx])
-        print(distance)
-        if distance < delta:
-            n_inliers += 1
-    print(n_inliers)
+    for _ in range(n_iters):
+        inliers = []
+        curr_n_inliers = 0
+        sample_indices = np.random.choice(N, n_samples, replace=False)
+        sample_src = matched1_unpad[sample_indices]
+        sample_dst = matched2_unpad[sample_indices]
+        # compute affine transformation matrix h
+        h_matrix = compute_homography(sample_src, sample_dst)
+        # count inliners
+        predicted_dst = transform_homography(matched1_unpad, h_matrix)
+        for idx in range(N):
+            distance = np.linalg.norm(
+                predicted_dst[idx] - matched2_unpad[idx])
+            if distance < delta:
+                curr_n_inliers += 1
+                inliers.append(idx)
+        if curr_n_inliers > n_inliers:
+            # keep track of the largest number of inliers
+            max_inliers = inliers
+            n_inliers = curr_n_inliers
+    # recompute matrix h with all inliers
+    H = compute_homography(
+        matched1_unpad[max_inliers], matched2_unpad[max_inliers])
     # END YOUR CODE
     return H, matches[max_inliers]
 
