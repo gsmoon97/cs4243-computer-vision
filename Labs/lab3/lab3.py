@@ -45,7 +45,7 @@ def harris_corners(img, window_size=3, k=0.04):
     R=Det(M)-k(Trace(M)^2).
 
     Hint:
-        You may use the functions filters.sobel_v filters.sobel_h & scipy.ndimage.filters.convolve, 
+        You may use the functions filters.sobel_v filters.sobel_h & scipy.ndimage.filters.convolve,
         which are already imported above
 
     Args:
@@ -79,11 +79,11 @@ def harris_corners(img, window_size=3, k=0.04):
 
 def naive_descriptor(patch):
     '''
-    Describe the patch by normalizing the image values into a standard 
-    normal distribution (having mean of 0 and standard deviation of 1) 
-    and then flattening into a 1D array. 
+    Describe the patch by normalizing the image values into a standard
+    normal distribution (having mean of 0 and standard deviation of 1)
+    and then flattening into a 1D array.
 
-    The normalization will make the descriptor more robust to change 
+    The normalization will make the descriptor more robust to change
     in lighting condition.
 
     Args:
@@ -239,7 +239,7 @@ def top_k_matches(desc1, desc2, k=2):
 def ratio_test_match(desc1, desc2, match_threshold):
     '''
     Match two set of descriptors using the ratio test.
-    Output should be a numpy array of shape (k,2), where k is the number of matches found. 
+    Output should be a numpy array of shape (k,2), where k is the number of matches found.
     In the following sample output:
         array([[  3,   0],
                [  5,  30],
@@ -598,9 +598,9 @@ def create_mirror_descriptors(img):
 
 def match_mirror_descriptors(descs, mirror_descs, threshold=0.7):
     '''
-    First use `top_k_matches` to find the nearest 3 matches for each keypoint. Then eliminate the mirror descriptor that comes 
-    from the same keypoint. Perform ratio test on the two matches left. If no descriptor is eliminated, perform the ratio test 
-    on the best 2. 
+    First use `top_k_matches` to find the nearest 3 matches for each keypoint. Then eliminate the mirror descriptor that comes
+    from the same keypoint. Perform ratio test on the two matches left. If no descriptor is eliminated, perform the ratio test
+    on the best 2.
     '''
     three_matches = top_k_matches(descs, mirror_descs, k=3)
 
@@ -706,7 +706,21 @@ def match_with_self(descs, kps, threshold=0.8):
     matches = []
 
     # YOUR CODE HERE
-
+    three_matches = top_k_matches(descs, descs, k=3)
+    # eliminate descriptors that come from the same corresponding keypoints
+    for desc_idx, match in enumerate(three_matches):
+        new_match = []
+        for old_match in match[1]:
+            if old_match[0] != desc_idx:
+                new_match.append(old_match)
+        three_matches[desc_idx][1] = new_match
+    # perform ratio test on processed mirror descriptors
+    for pair in three_matches:
+        match1 = pair[1][0]
+        match2 = pair[1][1]
+        if (match1[1] / match2[1]) < threshold:
+            matches.append([pair[0], match1[0]])
+    matches = np.array(matches)
     # END
     return matches
 
@@ -715,9 +729,9 @@ def match_with_self(descs, kps, threshold=0.8):
 
 def find_rotation_centers(matches, kps, angles, sizes, im_shape):
     '''
-    For each pair of matched keypoints (using `match_with_self`), compute the coordinates of the center of rotation and vote weight. 
+    For each pair of matched keypoints (using `match_with_self`), compute the coordinates of the center of rotation and vote weight.
     For each pair (kp1, kp2), use kp1 as point I, and kp2 as point J. The center of rotation is such that if we pivot point I about it,
-    the orientation line at point I will end up coinciding with that at point J. 
+    the orientation line at point I will end up coinciding with that at point J.
 
     You may want to draw out a simple case to visualize first.
 
@@ -729,7 +743,38 @@ def find_rotation_centers(matches, kps, angles, sizes, im_shape):
     W = []
 
     # YOUR CODE HERE
-
+    height, width = im_shape
+    for match in matches:
+        i, j = match
+        point_i = kps[i]
+        point_j = kps[j]
+        angle_i = angles[i]
+        angle_j = angles[j]
+        # maintain angles within 0 - 360 degrees
+        if angle_i > 360 or angle_i < 0:
+            print('{}degrees is  out of bounds'.format(angle_i))
+        if angle_j > 360 or angle_j < 0:
+            print('{}degrees is  out of bounds'.format(angle_j))
+        # eliminate parallel matches (angles within 1 degree)
+        if abs(angle_i - angle_j) <= 1:
+            # print('detected parallel matches')
+            continue
+        bet = (np.deg2rad(angle_i - angle_j) + math.pi) / 2
+        rad = (distance(point_i, point_j) *
+               math.sqrt(1 + math.tan(bet) ** 2)) / 2
+        gam = angle_with_x_axis(point_i, point_j)
+        center_y = point_i[0] + rad * math.sin(bet + gam)
+        center_x = point_i[1] + rad * math.cos(bet + gam)
+        # discard if center is out of image bounds
+        if center_x > width or center_x < 0:
+            # print('center out of bounds')
+            continue
+        if center_y > height or center_y < 0:
+            # print('center out of bounds')
+            continue
+        Y.append(center_y)
+        X.append(center_x)
+        W.append([sizes[i], sizes[j]])
     # END
 
     return Y, X, W
@@ -748,7 +793,36 @@ def hough_vote_rotation(matches, kps, angles, sizes, im_shape, window=1, thresho
     Y, X, W = find_rotation_centers(matches, kps, angles, sizes, im_shape)
 
     # YOUR CODE HERE
+    # initalize variables for hough transform
+    height, width = im_shape
+    bin_size = 4
+    max_y = height
+    min_y = 0
+    num_y = height // bin_size
+    max_x = width
+    min_x = 0
+    num_x = width // bin_size
 
+    # quantize parameter space
+    Y_bins = np.linspace(min_y, max_y, num_y)
+    X_bins = np.linspace(min_x, max_x, num_x)
+    # create accumulator array
+    A = np.zeros((num_y, num_x))
+    # iterate through all keypoints
+    assert (len(Y) == len(X)
+            ), 'Number of votes for y-coordinates and x-coordinates have to be the same'
+    for idx in range(len(Y)):
+        y_c = Y[idx]
+        y_idx = math.floor(y_c / bin_size) - 1
+        x_c = X[idx]
+        x_idx = math.floor(x_c / bin_size) - 1
+        s_i, s_j = W[idx]
+        q = -abs(s_i - s_j) / (s_i + s_j)
+        w = (math.e ** q) ** 2
+        A[y_idx, x_idx] += w
+    peaks = find_peak_params(A, [Y_bins, X_bins], window, threshold)
+    y_values = peaks[1][:num_centers].astype(int)
+    x_values = peaks[2][:num_centers].astype(int)
     # END
 
     return y_values, x_values
