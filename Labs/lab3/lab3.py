@@ -636,7 +636,15 @@ def find_symmetry_lines(matches, kps):
     rhos = []
     thetas = []
     # YOUR CODE HERE
-
+    for match in matches:
+        i, j = match
+        point_i = kps[i]
+        point_j = kps[j]
+        mid = midpoint(point_i, point_j)
+        ang = angle_with_x_axis(point_i, point_j)
+        rho = mid[1] * math.cos(ang) + mid[0] * math.sin(ang)
+        rhos.append(rho)
+        thetas.append(ang)
     # END
 
     return rhos, thetas
@@ -654,7 +662,32 @@ def hough_vote_mirror(matches, kps, im_shape, window=1, threshold=0.5, num_lines
     rhos, thetas = find_symmetry_lines(matches, kps)
 
     # YOUR CODE HERE
-
+    # initalize variables for hough transform
+    height, width = im_shape
+    t_max = 2.0 * math.pi
+    t_min = 0.0
+    t_num = 360
+    r_max = math.ceil(math.hypot(height, width))
+    r_min = -1 * r_max
+    r_num = 2 * r_max
+    # quantize parameter space
+    R = np.linspace(r_min, r_max, r_num, endpoint=False, dtype=int)
+    T = np.linspace(t_min, t_max, t_num, endpoint=False)
+    # create accumulator array
+    A = np.zeros((r_num, t_num), int)
+    # iterate through all keypoints
+    rhos, thetas = find_symmetry_lines(matches, kps)
+    assert (len(rhos) == len(thetas)
+            ), 'Number of votes for rhos and thetas have to be the same'
+    for idx in range(len(rhos)):
+        rho = rhos[idx]
+        theta = thetas[idx]
+        r_idx = math.floor(rho + r_max)
+        t_idx = int(theta * (180 / math.pi))
+        A[r_idx, t_idx] += 1
+    peaks = find_peak_params(A, [R, T], window, threshold)
+    rho_values = peaks[1][:num_lines]
+    theta_values = peaks[2][:num_lines]
     # END
 
     return rho_values, theta_values
