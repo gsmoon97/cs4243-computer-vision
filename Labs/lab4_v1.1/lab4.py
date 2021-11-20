@@ -2,7 +2,8 @@ import cv2
 import numpy as np
 import math
 from sklearn.cluster import KMeans
-from sklearn.cluster import MeanShift  # to be removed later
+from sklearn.cluster import MeanShift  # added
+from scipy.spatial.distance import cdist  # added
 
 # Part 1
 
@@ -200,10 +201,10 @@ def cluster(img, pts, features, bandwidth, tau1, tau2, gamma_h):
     for cluster in candidate_clusters:
         cluster_size = len(cluster)
         if cluster_size < tau1:  # discard small clusters
-            print('discarding small cluster')
+            print('discarding small cluster...')
             continue
         elif cluster_size > tau2:  # partition large clusters
-            print('partitioning big cluster')
+            print('partitioning big cluster...')
             kmeans = KMeans(n_clusters=(cluster_size // tau2)
                             ).fit(features[cluster])
             kmeans_cluster_centers = kmeans.cluster_centers_
@@ -216,7 +217,7 @@ def cluster(img, pts, features, bandwidth, tau1, tau2, gamma_h):
                 clusters.append(np.array(kmeans_cluster))
             continue
         else:
-            print('adding new cluster')
+            print('adding new cluster...')
             clusters.append(np.array(cluster))
     clusters = [pts[cluster] for cluster in clusters]
     # END
@@ -258,7 +259,114 @@ def get_proposal(pts_cluster, tau_a, X):
                   Each inlier is a dictionary, with key of "pt_int" and "pt" representing the integer positions after affine transformation and orignal coordinates.
     """
     # YOU CODE HERE
+    def transform_homography(src, w_matrix, getNormalized=True):
+        '''
+        Performs the perspective transformation of coordinates
 
+        Args:
+            src (np.ndarray): Coordinates of points to transform (N,2)
+            h_matrix (np.ndarray): Homography matrix (3,3)
+
+        Returns:
+            transformed (np.ndarray): Transformed coordinates (N,2)
+
+        '''
+        transformed = None
+        input_pts = np.insert(src, 2, values=1, axis=1)
+        w_matrix = np.concatenate((w_matrix, [[0, 0, 1]]), axis=0)
+        transformed = np.zeros_like(input_pts)
+        transformed = w_matrix.dot(input_pts.transpose())
+        if getNormalized:
+            transformed = transformed[:-1]/transformed[-1]
+        transformed = transformed.transpose().astype(np.float32)
+
+        return transformed
+    proposal = []
+    distances = cdist(pts_cluster, pts_cluster, 'euclidean')
+    Y = 10
+    # iterate over all points in the given cluster
+    assert len(
+        pts_cluster) >= Y, 'There are at least {} points in each cluster.'.format(Y)
+    max_n_inliers = -1
+    max_triplets = None
+    triplets_dst = np.array([[0, 0], [1, 0], [0, 1]]
+                            ).astype(np.float32)
+    for idx, p in enumerate(pts_cluster):
+        distance = distances[idx]
+        Y_nearest_indices = (distance).argsort()[1: Y + 1 + 1]
+        assert idx not in Y_nearest_indices, 'The {} nearest neighbors for a point should not contain itself.'.format(
+            Y)
+        # iterate over all possible YC2 combinations of triplets
+        for i in range(Y):
+            for j in range(Y):
+                if i <= j:
+                    continue
+                # reorder triplets (maintain 'a' as the the vertex opposite to the longest side of the traingle formed by triplets)
+                triplets = [
+                    p,
+                    pts_cluster[Y_nearest_indices[i]],
+                    pts_cluster[Y_nearest_indices[j]]
+                ]
+                triplet_distances = cdist(triplets, triplets, 'euclidean')
+                a_idx = np.argmin([np.max(triplet_distance)
+                                   for triplet_distance in triplet_distances])
+                a = triplets.pop(a_idx)
+                b = triplets.pop(0)
+                c = triplets.pop(0)
+                triplets = np.array([a, b, c]).astype(np.float32)
+                warp_mat = cv2.getAffineTransform(triplets, triplets_dst)
+                # print(transform_homography(triplets, warp_mat))
+                # count inliers (consider only the X nearest points)
+                X_nearest_points = pts_cluster[
+                    (distance).argsort()[1:X + 1 + 1]
+                ]
+                X_nearest_predicted = transform_homography(
+                    X_nearest_points, warp_mat)
+                curr_n_inliers = 0
+                for X_predicted in X_nearest_predicted:
+                    nearest_integer_position = np.rint(X_predicted)
+                    X_distance = np.linalg.norm(
+                        X_predicted - nearest_integer_position)
+                    if X_distance < tau_a:
+                        curr_n_inliers += 1
+                if curr_n_inliers > max_n_inliers:
+                    # update the maximum number of inliers and the corresponding triplets
+                    max_n_inliers = curr_n_inliers
+                    max_triplets = triplets
+    # recompute warp matrix based on the inliers (consider only the X nearest points)
+    warp_mat = cv2.getAffineTransform(max_triplets, triplets_dst)
+    X_nearest_points = pts_cluster[
+        (distance).argsort()[1:X + 1 + 1]
+    ]
+    X_nearest_predicted = transform_homography(
+        X_nearest_points, warp_mat)
+    proposal.extend(
+        [
+            {
+                'pt_int': [0, 0],
+                'pt': max_triplets[0]
+            },
+            {
+                'pt_int': [1, 0],
+                'pt': max_triplets[1]
+            },
+            {
+                'pt_int': [0, 1],
+                'pt': max_triplets[2]
+            }
+        ]
+    )
+    for idx, X_predicted in enumerate(X_nearest_predicted):
+        nearest_integer_position = np.rint(X_predicted)
+        X_distance = np.linalg.norm(
+            X_predicted - nearest_integer_position)
+        if X_distance < tau_a:
+            proposal.append(
+                {
+                    'pt_int': np.rint(X_predicted),
+                    'pt': X_nearest_points[idx]
+                }
+            )
     # END
 
     return proposal
