@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import math
 from sklearn.cluster import KMeans
+from sklearn.cluster import MeanShift  # to be removed later
 
 # Part 1
 
@@ -31,7 +32,7 @@ def detect_points(img, min_distance, rou, pt_num, patch_size, tau_rou, gamma_rou
     Np = pt_num * 0.9
 
     # YOUR CODE HERE
-    pts = np.zeros((1, 1, 2), dtype='float64')
+    pts = []
     h_bins = h // patch_size
     w_bins = w // patch_size
     for h_idx in range(h_bins):
@@ -47,12 +48,12 @@ def detect_points(img, min_distance, rou, pt_num, patch_size, tau_rou, gamma_rou
                 patch_pts = cv2.goodFeaturesToTrack(
                     img_gray, pt_num, patch_rou, min_distance, mask=patch_mask)
             if patch_pts is not None:
-                pts = np.concatenate((pts, patch_pts), axis=0)
-    pts = np.squeeze(pts)
-    # goodFeaturestoTrack returns (x, y) coordinates
-    # need to swap the order to return (y, x) coordinates
-    for p in pts:
-        p[0], p[1] = p[1], p[0]
+                for patch_p in patch_pts:
+                    # goodFeaturestoTrack returns (x, y) coordinates
+                    # need to swap the order to return (y, x) coordinates
+                    x, y = patch_p.ravel()
+                    pts.append(np.array([y, x]).astype('float64'))
+    pts = np.array(pts)
     # END
 
     return pts
@@ -93,15 +94,15 @@ def extract_point_features(img, pts, window_patch):
     within_border = np.apply_along_axis(
         lambda p: h_min <= p[0] <= h_max and w_min <= p[1] <= w_max, 1, pts)
     pts = pts[within_border, :]
-    features = np.zeros((1, (window_patch * 2 + 1)**2), dtype='float64')
+    features = []
     for p in pts:
         y, x = p.astype(int)
         patch = img_gray[y - window_patch: y + window_patch + 1,
                          x - window_patch: x + window_patch + 1]
         # normalize the patch
         normalized_patch = (patch - np.mean(patch)) / np.std(patch)
-        features = np.concatenate(
-            (features, [normalized_patch.flatten()]), axis=0)
+        features.append(normalized_patch.flatten())
+    features = np.array(features).astype('float64')
     # End
 
     return pts, features
@@ -129,61 +130,35 @@ def mean_shift_clustering(features, bandwidth):
     # YOUR CODE HERE
     # ===============================================================
     # no_of_features = features.shape[0]
-    # centroids = features.copy()
+    # centroids = {}
+    # for i in range(no_of_features):
+    #     centroids[i] = features[i]
     # while True:
-    #     new_centroids = []
-    #     for centroid in centroids:
+    #     converged = True
+    #     for f_idx, centroid in centroids.items():
     #         within_bandwidth = []
     #         for feature in features:
     #             if np.linalg.norm(feature - centroid) < bandwidth:
     #                 within_bandwidth.append(feature)
-    #         # compute new centroid based on the window
     #         new_centroid = np.mean(within_bandwidth, axis=0)
-    #         new_centroids.append(new_centroid)
-    #     # remove duplicate centroids
-    #     new_centroids = np.array(np.unique(new_centroids, axis=0))
-    #     if np.array_equal(centroids, new_centroids):
+    #         # if np.linalg.norm(centroid - new_centroid) > 0:
+    #         if not np.array_equal(centroid, new_centroid):
+    #             converged = False
+    #             centroids.update({f_idx: new_centroid})
+    #     if converged:
     #         break
-    #     else:
-    #         centroids = new_centroids
+    # unique_centroids = np.unique(np.array(list(centroids.values())), axis=0)
     # labels = []
-    # no_of_centroids = centroids.shape[0]
-    # for feature in features:
-    #     min_dist = math.inf
-    #     min_idx = -1
-    #     for c_idx in range(no_of_centroids):
-    #         dist = np.linalg.norm(feature - centroids[c_idx])
-    #         if dist < min_dist:
-    #             min_dist = dist
-    #             min_idx = c_idx
-    #     labels.append(min_idx)
+    # for centroid in centroids.values():
+    #     idx = np.where(unique_centroids == centroid)[0][0]
+    #     labels.append(idx)
     # labels = np.array(labels)
     # ===============================================================
-    no_of_features = features.shape[0]
-    centroids = {}
-    for i in range(no_of_features):
-        centroids[i] = features[i]
-    while True:
-        converged = True
-        for f_idx, centroid in centroids.items():
-            within_bandwidth = []
-            for feature in features:
-                if np.linalg.norm(feature - centroid) < bandwidth:
-                    within_bandwidth.append(feature)
-            new_centroid = np.mean(within_bandwidth, axis=0)
-            # if np.linalg.norm(centroid - new_centroid) > 0:
-            if not np.array_equal(centroid, new_centroid):
-                converged = False
-                centroids.update({f_idx: new_centroid})
-        if converged:
-            break
-    unique_centroids = np.unique(np.array(list(centroids.values())), axis=0)
-    labels = []
-    for centroid in centroids.values():
-        idx = np.where(unique_centroids == centroid)[0][0]
-        labels.append(idx)
-    labels = np.array(labels)
-    clustering = {'cluster_centers_': unique_centroids,
+    ms = MeanShift(bandwidth=bandwidth, bin_seeding=True)
+    ms.fit(features)
+    cluster_centers = ms.cluster_centers_
+    labels = ms.labels_
+    clustering = {'cluster_centers_': cluster_centers,
                   'labels_': labels, 'bandwidth': bandwidth}
     # END
 
@@ -221,27 +196,29 @@ def cluster(img, pts, features, bandwidth, tau1, tau2, gamma_h):
     candidate_clusters = [[] for _ in range(no_of_clusters)]
     clusters = []
     for i in range(no_of_features):
-        candidate_clusters[labels[i]].append(features[i])
+        candidate_clusters[labels[i]].append(i)
     for cluster in candidate_clusters:
         cluster_size = len(cluster)
         if cluster_size < tau1:  # discard small clusters
-            print('detected small cluster')
+            print('discarding small cluster')
             continue
         elif cluster_size > tau2:  # partition large clusters
-            print('detected big cluster')
-            kmeans = KMeans(n_clusters=(cluster_size // tau2)).fit(cluster)
+            print('partitioning big cluster')
+            kmeans = KMeans(n_clusters=(cluster_size // tau2)
+                            ).fit(features[cluster])
             kmeans_cluster_centers = kmeans.cluster_centers_
             kmeans_labels = kmeans.labels_
             no_of_kmeans_clusters = kmeans_cluster_centers.shape[0]
             kmeans_clusters = [[] for _ in range(no_of_kmeans_clusters)]
-            for idx, point in enumerate(cluster):
-                kmeans_clusters[labels[idx]].append(point)
+            for km_idx, f_idx in enumerate(cluster):
+                kmeans_clusters[kmeans_labels[km_idx]].append(f_idx)
             for kmeans_cluster in kmeans_clusters:
                 clusters.append(np.array(kmeans_cluster))
             continue
         else:
-            print('detected new cluster')
+            print('adding new cluster')
             clusters.append(np.array(cluster))
+    clusters = [pts[cluster] for cluster in clusters]
     # END
 
     return clusters
