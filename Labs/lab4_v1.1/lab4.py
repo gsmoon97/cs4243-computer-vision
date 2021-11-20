@@ -678,8 +678,8 @@ def template_match(img, proposal, threshold):
     # apply template matching
     result = cv2.matchTemplate(img.copy(), template, cv2.TM_CCOEFF_NORMED)
     response = non_max_suppression(result,
-                                   (int(template.shape[0] * 0.8),
-                                    int(template.shape[1] * 0.8)),
+                                   (int(template.shape[0] * 0.5),
+                                    int(template.shape[1] * 0.5)),
                                    threshold=threshold)
     # END
     return response
@@ -700,7 +700,34 @@ def maxima2grid(img, proposal, response):
 
     """
     # YOUR CODE HERE
-
+    # use the first three points to create the template
+    pts = np.array([p['pt'] for p in proposal])
+    a, b, c = pts[:3]
+    d = a + (b-a) + (c-a)
+    corner = np.array([a, b, c, d])
+    max_y = np.max(corner[:, 0])
+    min_y = np.min(corner[:, 0])
+    max_x = np.max(corner[:, 1])
+    min_x = np.min(corner[:, 1])
+    template = img.copy()[min_y:max_y + 1, min_x:max_x + 1]
+    cen_y = np.mean([max_y, min_y])
+    cen_x = np.mean([max_x, min_x])
+    offsets = []
+    for pt in corner:
+        offset_y = pt[0] - cen_y
+        offset_x = pt[1] - cen_x
+        offsets.append([offset_y, offset_x])
+    points_grid = []
+    h, w = response.shape
+    for y in range(h):
+        for x in range(w):
+            if response[y][x] != 0:
+                for offset in offsets:
+                    offset_y, offset_x = offset
+                    new_y = y + offset_y
+                    new_x = x + offset_x
+                    points_grid.append([new_y, new_x])
+    points_grid = np.array(points_grid)
     # END
 
     return points_grid
@@ -717,7 +744,21 @@ def refine_grid(img, proposal, points_grid):
         points: A numpy ndarray of shape (N, 2), where N is the number of refined grid points.
     """
     # YOUR CODE HERE
-
+    # use the first three points to create the template
+    pts = np.array([p['pt'] for p in proposal])
+    a, b, c = pts[:3]
+    min_dist = np.min([np.linalg.norm(a-b), np.linalg.norm(a-c)])
+    distances = cdist(points_grid, points_grid, 'euclidean')
+    points = []
+    duplicates = []
+    for pg_idx, distance in enumerate(distances):
+        if pg_idx in duplicates:
+            continue
+        duplicate_candidates = np.where(distance < min_dist)[0]
+        for duplicate_candidate in duplicate_candidates:
+            if duplicate_candidate not in duplicates and duplicate_candidate != pg_idx:
+                duplicates.append(duplicate_candidate)
+    points = np.delete(points_grid, duplicates, axis=0)
     # END
 
     return points
