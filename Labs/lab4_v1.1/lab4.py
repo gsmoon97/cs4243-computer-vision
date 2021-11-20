@@ -4,6 +4,7 @@ import math
 from sklearn.cluster import KMeans
 from sklearn.cluster import MeanShift  # added
 from scipy.spatial.distance import cdist  # added
+from heapq import heappop, heappush, heapify  # added
 
 # Part 1
 
@@ -259,7 +260,38 @@ def get_proposal(pts_cluster, tau_a, X):
                   Each inlier is a dictionary, with key of "pt_int" and "pt" representing the integer positions after affine transformation and orignal coordinates.
     """
     # YOU CODE HERE
-    def transform_homography(src, w_matrix, getNormalized=True):
+    def top_k_nearest(pts, pt_0, k, pt_b=None, pt_c=None):
+        heap = []
+        heapify(heap)
+
+        for i in range(len(pts)):
+            pt_1 = pts[i]
+            if pt_0[0] == pt_1[0] and pt_0[1] == pt_1[1]:
+                continue
+            if type(pt_b) is np.ndarray and pt_b[0] == pt_1[0] and pt_b[1] == pt_1[1]:
+                continue
+            if type(pt_c) is np.ndarray and pt_c[0] == pt_1[0] and pt_c[1] == pt_1[1]:
+                continue
+
+            dist = euclidean_distance(pt_0, pt_1)
+
+            heappush(heap, (-1 * dist, i))
+
+            if i > k:
+                heappop(heap)
+
+        result = []
+
+        for i in range(len(heap)):
+            idx = heap[i][1]
+            result.append(pts[idx])
+
+        return result
+
+    def euclidean_distance(pt_0, pt_1):
+        return math.sqrt((pt_0[0] - pt_1[0]) ** 2 + (pt_0[1] - pt_1[1]) ** 2)
+
+    def transform_pts(pts, M):
         '''
         Performs the perspective transformation of coordinates
 
@@ -272,101 +304,195 @@ def get_proposal(pts_cluster, tau_a, X):
 
         '''
         transformed = None
-        input_pts = np.insert(src, 2, values=1, axis=1)
-        w_matrix = np.concatenate((w_matrix, [[0, 0, 1]]), axis=0)
+
+        input_pts = np.insert(pts, 2, values=1, axis=1)
+        N = np.array([[0, 0, 1]])
+        M = np.concatenate((M, N))
+
         transformed = np.zeros_like(input_pts)
-        transformed = w_matrix.dot(input_pts.transpose())
-        if getNormalized:
-            transformed = transformed[:-1]/transformed[-1]
+        transformed = M.dot(input_pts.transpose())
+
+        transformed = transformed[:-1]/transformed[-1]
         transformed = transformed.transpose().astype(np.float32)
 
         return transformed
+
     proposal = []
-    distances = cdist(pts_cluster, pts_cluster, 'euclidean')
-    Y = 10
-    # iterate over all points in the given cluster
-    assert len(
-        pts_cluster) >= Y, 'There are at least {} points in each cluster.'.format(Y)
-    max_n_inliers = -1
-    max_triplets = None
-    triplets_dst = np.array([[0, 0], [1, 0], [0, 1]]
-                            ).astype(np.float32)
-    for idx, p in enumerate(pts_cluster):
-        distance = distances[idx]
-        Y_nearest_indices = (distance).argsort()[1: Y + 1 + 1]
-        assert idx not in Y_nearest_indices, 'The {} nearest neighbors for a point should not contain itself.'.format(
-            Y)
-        # iterate over all possible YC2 combinations of triplets
-        for i in range(Y):
-            for j in range(Y):
-                if i <= j:
-                    continue
-                # reorder triplets (maintain 'a' as the the vertex opposite to the longest side of the traingle formed by triplets)
-                triplets = [
-                    p,
-                    pts_cluster[Y_nearest_indices[i]],
-                    pts_cluster[Y_nearest_indices[j]]
-                ]
-                triplet_distances = cdist(triplets, triplets, 'euclidean')
-                a_idx = np.argmin([np.max(triplet_distance)
-                                   for triplet_distance in triplet_distances])
-                a = triplets.pop(a_idx)
-                b = triplets.pop(0)
-                c = triplets.pop(0)
-                triplets = np.array([a, b, c]).astype(np.float32)
-                warp_mat = cv2.getAffineTransform(triplets, triplets_dst)
-                # print(transform_homography(triplets, warp_mat))
-                # count inliers (consider only the X nearest points)
-                X_nearest_points = pts_cluster[
-                    (distance).argsort()[1:X + 1 + 1]
-                ]
-                X_nearest_predicted = transform_homography(
-                    X_nearest_points, warp_mat)
-                curr_n_inliers = 0
-                for X_predicted in X_nearest_predicted:
-                    nearest_integer_position = np.rint(X_predicted)
-                    X_distance = np.linalg.norm(
-                        X_predicted - nearest_integer_position)
-                    if X_distance < tau_a:
-                        curr_n_inliers += 1
-                if curr_n_inliers > max_n_inliers:
-                    # update the maximum number of inliers and the corresponding triplets
-                    max_n_inliers = curr_n_inliers
-                    max_triplets = triplets
-    # recompute warp matrix based on the inliers (consider only the X nearest points)
-    warp_mat = cv2.getAffineTransform(max_triplets, triplets_dst)
-    X_nearest_points = pts_cluster[
-        (distance).argsort()[1:X + 1 + 1]
-    ]
-    X_nearest_predicted = transform_homography(
-        X_nearest_points, warp_mat)
-    proposal.extend(
-        [
-            {
-                'pt_int': [0, 0],
-                'pt': max_triplets[0]
-            },
-            {
-                'pt_int': [1, 0],
-                'pt': max_triplets[1]
-            },
-            {
-                'pt_int': [0, 1],
-                'pt': max_triplets[2]
-            }
-        ]
-    )
-    for idx, X_predicted in enumerate(X_nearest_predicted):
-        nearest_integer_position = np.rint(X_predicted)
-        X_distance = np.linalg.norm(
-            X_predicted - nearest_integer_position)
-        if X_distance < tau_a:
-            proposal.append(
-                {
-                    'pt_int': np.rint(X_predicted),
-                    'pt': X_nearest_points[idx]
+
+    dst_tri = np.array([[0, 0], [1, 0], [0, 1]]).astype(np.float32)
+
+    max_count = 0
+
+    for pt_0 in pts_cluster:
+        # For each point, you choose 2 of the 10 nearest points
+        nearest_10_pts = top_k_nearest(pts_cluster, pt_0, 10)
+
+        for i in range(len(nearest_10_pts) - 1):
+            for j in range(i + 1, len(nearest_10_pts)):
+                pt_1 = nearest_10_pts[i]
+                pt_2 = nearest_10_pts[j]
+
+                # Define point a as the point to be the vertex opposite the longest side of the triangle formed by these three points
+                dist_0_1 = euclidean_distance(pt_0, pt_1)
+                dist_0_2 = euclidean_distance(pt_0, pt_2)
+                dist_1_2 = euclidean_distance(pt_1, pt_2)
+
+                a = [0, 0]
+                b = [0, 0]
+                c = [0, 0]
+                if dist_0_1 < dist_1_2 and dist_0_2 < dist_1_2:
+                    a = pt_0
+                    b = pt_1
+                    c = pt_2
+
+                elif dist_0_1 < dist_0_2 and dist_1_2 < dist_0_2:
+                    a = pt_1
+                    b = pt_2
+                    c = pt_0
+
+                elif dist_0_2 < dist_0_1 and dist_1_2 < dist_0_1:
+                    a = pt_2
+                    b = pt_0
+                    c = pt_1
+
+                inliner_a = {
+                    'pt_int': np.array([0, 0]).astype(int),
+                    'pt': np.array(a).astype(int)
                 }
-            )
+                inliner_b = {
+                    'pt_int': np.array([1, 0]).astype(int),
+                    'pt': np.array(b).astype(int)
+                }
+                inliner_c = {
+                    'pt_int': np.array([0, 1]).astype(int),
+                    'pt': np.array(c).astype(int)
+                }
+
+                src_tri = np.array([a, b, c]).astype(np.float32)
+                M = cv2.getAffineTransform(src_tri, dst_tri)
+
+                nearest_X_pts = top_k_nearest(
+                    pts_cluster, a, X, pt_b=b, pt_c=c)
+                transformed_pts = transform_pts(nearest_X_pts, M)
+
+                count = 0
+                inliers = [inliner_a, inliner_b, inliner_c]
+
+                for k in range(len(transformed_pts)):
+                    original_pt = nearest_X_pts[k]
+                    transformed_pt = transformed_pts[k]
+
+                    nearest_grid = [
+                        np.rint(transformed_pt[0]), np.rint(transformed_pt[1])]
+                    dist = euclidean_distance(transformed_pt, nearest_grid)
+
+                    if dist < tau_a:
+                        pt_int = np.array(nearest_grid).astype(int)
+                        pts_int = [inl['pt_int'] for inl in inliers]
+                        pt = np.array(original_pt).astype(int)
+                        # # do not add if the point projects to duplicate integer coordinates
+                        # if inliers:
+                        #     if any((pt_int == x).all() for x in pts_int):
+                        #         continue
+                        count += 1
+                        inlier = {
+                            'pt_int': pt_int,
+                            'pt': pt
+                        }
+                        inliers.append(inlier)
+
+                if count > max_count:
+                    proposal = inliers
+    # def transform_homography(src, w_matrix, getNormalized=True):
+    #     '''
+    #     Performs the perspective transformation of coordinates
+
+    #     Args:
+    #         src (np.ndarray): Coordinates of points to transform (N,2)
+    #         h_matrix (np.ndarray): Homography matrix (3,3)
+
+    #     Returns:
+    #         transformed (np.ndarray): Transformed coordinates (N,2)
+
+    #     '''
+    #     transformed = None
+    #     input_pts = np.insert(src, 2, values=1, axis=1)
+    #     w_matrix = np.concatenate((w_matrix, [[0, 0, 1]]), axis=0)
+    #     transformed = np.zeros_like(input_pts)
+    #     transformed = w_matrix.dot(input_pts.transpose())
+    #     if getNormalized:
+    #         transformed = transformed[:-1]/transformed[-1]
+    #     transformed = transformed.transpose().astype(np.float32)
+
+    #     return transformed
+    # proposal = []
+    # distances = cdist(pts_cluster, pts_cluster, 'euclidean')
+    # Y = 10
+    # # iterate over all points in the given cluster
+    # assert len(
+    #     pts_cluster) >= Y, 'There are at least {} points in each cluster.'.format(Y)
+    # max_n_inliers = -1
+    # max_triplets = None
+    # triplets_dst = np.array([[0, 0], [1, 0], [0, 1]]
+    #                         ).astype(np.float32)
+    # for p_idx, point in enumerate(pts_cluster):
+    #     distance = distances[p_idx]
+    #     Y_nearest_indices = (distance).argsort()[1: Y + 1 + 1]
+    #     assert p_idx not in Y_nearest_indices, 'The {} nearest neighbors for a point should not contain itself.'.format(
+    #         Y)
+    #     # iterate over all possible YC2 combinations of triplets
+    #     for i in range(Y):
+    #         for j in range(Y):
+    #             if i >= j:
+    #                 continue
+    #             # reorder triplets (maintain 'a' as the the vertex opposite to the longest side of the traingle formed by triplets)
+    #             triplets = [
+    #                 point,
+    #                 pts_cluster[Y_nearest_indices[i]],
+    #                 pts_cluster[Y_nearest_indices[j]]
+    #             ]
+    #             triplet_distances = cdist(triplets, triplets, 'euclidean')
+    #             a_idx = np.argmin([np.max(triplet_distance)
+    #                                for triplet_distance in triplet_distances])
+    #             a = triplets.pop(a_idx)
+    #             b = triplets.pop(0)
+    #             c = triplets.pop(0)
+    #             triplets = np.array([a, b, c]).astype(np.float32)
+    #             warp_mat = cv2.getAffineTransform(triplets, triplets_dst)
+    #             # count inliers (consider only the X nearest points)
+    #             X_nearest_indices = (distance).argsort()[:X + 1]
+    #             X_nearest_points = pts_cluster[X_nearest_indices]
+    #             X_nearest_predicted = transform_homography(
+    #                 X_nearest_points, warp_mat)
+    #             inliers = [
+    #                 {
+    #                     'pt_int': [0, 0],
+    #                     'pt': max_triplets[0]
+    #                 },
+    #                 {
+    #                     'pt_int': [1, 0],
+    #                     'pt': max_triplets[1]
+    #                 },
+    #                 {
+    #                     'pt_int': [0, 1],
+    #                     'pt': max_triplets[2]
+    #                 }
+    #             ]
+    #             for X_idx, X_predicted in enumerate(X_nearest_predicted):
+    #                 nearest_integer_position = np.rint(X_predicted)
+    #                 X_distance = np.linalg.norm(
+    #                     X_predicted - nearest_integer_position)
+    #                 if X_distance < tau_a:
+    #                     curr_n_inliers += 1
+    #                     print(X_nearest_points[X_idx])
+    #                     print(nearest_integer_position)
+    #             blocker
+    #             if curr_n_inliers > max_n_inliers:
+    #                 # update the maximum number of inliers and the corresponding triplets
+    #                 max_n_inliers = curr_n_inliers
+    #                 max_triplets = triplets
+    # proposal = None
+
     # END
 
     return proposal
@@ -397,7 +523,44 @@ def find_texels(img, proposal, texel_size=50):
         texels: A numpy ndarray of the shape (#texels, texel_size, texel_size, #channels).
     """
     # YOUR CODE HERE
-
+    pts_int = np.array([p['pt_int'] for p in proposal])
+    pts = np.array([p['pt'] for p in proposal])
+    distances = cdist(pts_int, pts_int, 'euclidean')
+    corners_indices = []
+    for p_idx, pt_int in enumerate(pts_int):
+        corners = []
+        distance = distances[p_idx]
+        candidates = np.where(distance == 1)[0]
+        no_of_candidates = len(candidates)
+        if no_of_candidates >= 2:
+            for i in range(no_of_candidates - 1):
+                for j in range(i + 1, no_of_candidates):
+                    a = pt_int
+                    b = pts_int[candidates[i]]
+                    c = pts_int[candidates[j]]
+                    if np.linalg.norm(b - c) == math.sqrt(2):
+                        corners_indices.append(
+                            [p_idx, candidates[i], candidates[j]])
+    corners = np.array([pts[corner_indices] for corner_indices in corners_indices]
+                       ).astype(np.float32)
+    texels = []
+    for corner in corners:
+        point_fourth = corner[0] + \
+            (corner[1] - corner[0]) + (corner[2] - corner[0])
+        corner = np.concatenate((corner, [point_fourth]), axis=0)
+        corner_dst = np.float32([[0,  0],
+                                 [texel_size,  0],
+                                 [0, texel_size],
+                                 [texel_size, texel_size]])
+        # print(corner)
+        # print('\n')
+        # transpose (h, w), as the input argument of cv2.getPerspectiveTransform is (w, h) ordering
+        matrix_projective = cv2.getPerspectiveTransform(
+            corner[:, [1, 0]], corner_dst)
+        img_warped = cv2.warpPerspective(
+            img, matrix_projective, (texel_size, texel_size))
+        texels.append(img_warped)
+    texels = np.array(texels)
     # END
     return texels
 
@@ -423,7 +586,24 @@ def score_proposal(texels, a_score_count_min=3):
     K, U, V, C = texels.shape
 
     # YOUR CODE HERE
-
+    if K < a_score_count_min:  # check if at least 'a_score_count_min' number of texels
+        return 1000.0
+    # extract each channel from the source image
+    channels_a_score = []
+    for c_idx in range(3):
+        # normalize the corresponding channel
+        c_texels = [texel[:, :, c_idx] for texel in texels]
+        c_texels_mean = np.mean(c_texels)
+        c_texels_std = np.std(c_texels)
+        for i, c_texel in enumerate(c_texels):
+            c_texels[i] = (c_texel - c_texels_mean) / c_texels_std
+        numerator = 0
+        for u in range(U):
+            for v in range(V):
+                numerator += np.std([c_texel[u, v] for c_texel in c_texels])
+        channel_a_score = numerator / (U * V * math.sqrt(K))
+        channels_a_score.append(channel_a_score)
+    a_score = np.mean(channels_a_score)
     # END
 
     return a_score
@@ -485,7 +665,22 @@ def template_match(img, proposal, threshold):
         response: A sparse response map from non-maximum suppression.
     """
     # YOUR CODE HERE
-
+    # use the first three points to create the template
+    pts = np.array([p['pt'] for p in proposal])
+    a, b, c = pts[:3]
+    d = a + (b-a) + (c-a)
+    corner = np.array([a, b, c, d])
+    max_y = np.max(corner[:, 0])
+    min_y = np.min(corner[:, 0])
+    max_x = np.max(corner[:, 1])
+    min_x = np.min(corner[:, 1])
+    template = img.copy()[min_y:max_y + 1, min_x:max_x + 1]
+    # apply template matching
+    result = cv2.matchTemplate(img.copy(), template, cv2.TM_CCOEFF_NORMED)
+    response = non_max_suppression(result,
+                                   (int(template.shape[0] * 0.8),
+                                    int(template.shape[1] * 0.8)),
+                                   threshold=threshold)
     # END
     return response
 
