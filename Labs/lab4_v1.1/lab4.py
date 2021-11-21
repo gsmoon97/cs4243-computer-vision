@@ -853,7 +853,45 @@ def grid2latticeunit(img, proposal, points):
     """
 
     # YOUR CODE HERE
-
+    # The intutition is that, since the original proposals are not so reliable, (basis vectors are inaccruate)
+    # we make use of the grid points from the refine_grids() to figure out potential lattices.
+    # 1) For each grid point, find Y nearest grid points
+    # 2) For every possible pair of Y nearest grid points,
+    # 2-1) if the three points form a right-angled corner, update the global average unit distance with the two corner edge distances
+    # 2-2) add the corresponding edges to the group of  candidate edges
+    # 3) once the iteration is finished, return only the edges from candidate edges with distances similar to the global average unit distance
+    candidate_edges = []
+    edges = []
+    unit_dist = -1
+    distances = cdist(points, points, 'euclidean')
+    Y = 4
+    assert len(points) >= Y, 'There are at least {} points.'.format(Y)
+    # for each grid point, consider only the top Y nearest grid points
+    for p_idx, point in enumerate(points):
+        distance = distances[p_idx]
+        Y_nearest_indices = (distance).argsort()[1: Y + 1]
+        assert p_idx not in Y_nearest_indices, 'The {} nearest neighbors for a point should not contain itself.'.format(
+            Y)
+        for i in range(Y - 1):
+            for j in range(i + 1, Y):
+                b_idx = Y_nearest_indices[i]
+                c_idx = Y_nearest_indices[j]
+                candidate_edges.append([np.array(point).astype(int),
+                                        np.array(points[b_idx]).astype(int)])
+                candidate_edges.append([np.array(point).astype(int),
+                                        np.array(points[c_idx]).astype(int)])
+                # compute average unit distance with pairs of edges that result in a right-angled corner
+                if np.absolute(np.hypot(distance[b_idx], distance[c_idx]) - distances[b_idx][c_idx]) < 0.1:
+                    if unit_dist < 0:
+                        unit_dist = np.mean([distance[b_idx], distance[c_idx]])
+                    else:
+                        unit_dist = np.mean(
+                            [unit_dist, distance[b_idx], distance[c_idx]])
+    # remove any edges with distance too different from the average unit distance
+    for candidate_edge in candidate_edges:
+        src_point, dst_point = candidate_edge
+        if unit_dist * 0.9 < np.linalg.norm(src_point - dst_point) < unit_dist * 1.1:
+            edges.append(candidate_edge)
     # END
 
     return edges
