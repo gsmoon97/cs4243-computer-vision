@@ -34,6 +34,7 @@ def detect_points(img, min_distance, rou, pt_num, patch_size, tau_rou, gamma_rou
     Np = pt_num * 0.9
 
     # YOUR CODE HERE
+    # == for part 1 ==
     pts = []
     h_bins = h // patch_size
     w_bins = w // patch_size
@@ -56,6 +57,36 @@ def detect_points(img, min_distance, rou, pt_num, patch_size, tau_rou, gamma_rou
                     x, y = patch_p.ravel()
                     pts.append(np.array([y, x]).astype('float64'))
     pts = np.array(pts)
+    # == for part 4 ==
+    # pts = []
+    # P = int(h / patch_size)
+    # Q = int(w / patch_size)
+
+    # for i in range(P):
+    #     for j in range(Q):
+    #         keypoints = []
+    #         adj_rou = rou
+
+    #         while (len(keypoints) < Np and adj_rou >= tau_rou):
+    #             keypoints.clear()
+
+    #             corners = cv2.goodFeaturesToTrack(
+    #                 img_gray, pt_num, adj_rou, min_distance)
+    #             corners = np.int0(corners)
+    #             for corner in corners:
+    #                 x, y = corner.ravel()
+    #                 x += float(i * patch_size)
+    #                 y += float(j * patch_size)
+    #                 keypoints.append([x, y])
+
+    #             if (len(keypoints) >= Np):
+    #                 break
+    #             else:
+    #                 adj_rou *= gamma_rou
+
+    #         pts.extend(keypoints)
+
+    # pts = np.array(pts)
     # END
 
     return pts
@@ -860,12 +891,51 @@ def grid2latticeunit(img, proposal, points):
     # 2-1) if the three points form a right-angled corner, update the global average unit distance with the two corner edge distances
     # 2-2) add the corresponding edges to the group of  candidate edges
     # 3) once the iteration is finished, return only the edges from candidate edges with distances similar to the global average unit distance
+    # candidate_edges = []
+    # edges = []
+    # unit_dist = -1
+    # distances = cdist(points, points, 'euclidean')
+    # Y = 4
+    # assert len(points) >= Y, 'There are at least {} points.'.format(Y)
+    # # for each grid point, consider only the top Y nearest grid points
+    # for p_idx, point in enumerate(points):
+    #     distance = distances[p_idx]
+    #     Y_nearest_indices = (distance).argsort()[1: Y + 1]
+    #     assert p_idx not in Y_nearest_indices, 'The {} nearest neighbors for a point should not contain itself.'.format(
+    #         Y)
+    #     for i in range(Y - 1):
+    #         for j in range(i + 1, Y):
+    #             b_idx = Y_nearest_indices[i]
+    #             c_idx = Y_nearest_indices[j]
+    #             candidate_edges.append([np.array(point).astype(int),
+    #                                     np.array(points[b_idx]).astype(int)])
+    #             candidate_edges.append([np.array(point).astype(int),
+    #                                     np.array(points[c_idx]).astype(int)])
+    #             # compute average unit distance with pairs of edges that result in a right-angled corner
+    #             if np.absolute(np.hypot(distance[b_idx], distance[c_idx]) - distances[b_idx][c_idx]) < 0.1:
+    #                 if unit_dist < 0:
+    #                     unit_dist = np.mean([distance[b_idx], distance[c_idx]])
+    #                 else:
+    #                     unit_dist = np.mean(
+    #                         [unit_dist, distance[b_idx], distance[c_idx]])
+    # # remove any edges with distance too different from the average unit distance
+    # for candidate_edge in candidate_edges:
+    #     src_point, dst_point = candidate_edge
+    #     if unit_dist * 0.9 < np.linalg.norm(src_point - dst_point) < unit_dist * 1.1:
+    #         edges.append(candidate_edge)
+    # ==========================================================================================================================
+    # The intutition is that, since the original proposals are not so reliable, (basis vectors are inaccruate)
+    # we make use of the grid points from the refine_grids() to figure out potential lattices.
+    # 1) For each grid point, find Y nearest grid points
+    # 2) For every possible pair of Y nearest grid points,
+    # 2-1) if the three points form a right-angled corner, add the corresponding edges to the group of  candidate edges
+    # 3) once the iteration is finished, return the edges
     candidate_edges = []
     edges = []
     unit_dist = -1
     distances = cdist(points, points, 'euclidean')
     Y = 4
-    assert len(points) >= Y, 'There are at least {} points.'.format(Y)
+    assert len(points) > Y, 'There are at least {} points.'.format(Y + 1)
     # for each grid point, consider only the top Y nearest grid points
     for p_idx, point in enumerate(points):
         distance = distances[p_idx]
@@ -876,22 +946,12 @@ def grid2latticeunit(img, proposal, points):
             for j in range(i + 1, Y):
                 b_idx = Y_nearest_indices[i]
                 c_idx = Y_nearest_indices[j]
-                candidate_edges.append([np.array(point).astype(int),
-                                        np.array(points[b_idx]).astype(int)])
-                candidate_edges.append([np.array(point).astype(int),
-                                        np.array(points[c_idx]).astype(int)])
-                # compute average unit distance with pairs of edges that result in a right-angled corner
-                if np.absolute(np.hypot(distance[b_idx], distance[c_idx]) - distances[b_idx][c_idx]) < 0.1:
-                    if unit_dist < 0:
-                        unit_dist = np.mean([distance[b_idx], distance[c_idx]])
-                    else:
-                        unit_dist = np.mean(
-                            [unit_dist, distance[b_idx], distance[c_idx]])
-    # remove any edges with distance too different from the average unit distance
-    for candidate_edge in candidate_edges:
-        src_point, dst_point = candidate_edge
-        if unit_dist * 0.9 < np.linalg.norm(src_point - dst_point) < unit_dist * 1.1:
-            edges.append(candidate_edge)
+                if np.absolute(np.hypot(distance[b_idx], distance[c_idx]) - distances[b_idx][c_idx]) < 7.5:
+                    candidate_edges.append([np.array(point).astype(int),
+                                            np.array(points[b_idx]).astype(int)])
+                    candidate_edges.append([np.array(point).astype(int),
+                                            np.array(points[c_idx]).astype(int)])
+    edges = candidate_edges
     # END
 
     return edges
