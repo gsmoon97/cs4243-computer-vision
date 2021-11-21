@@ -744,21 +744,89 @@ def refine_grid(img, proposal, points_grid):
         points: A numpy ndarray of shape (N, 2), where N is the number of refined grid points.
     """
     # YOUR CODE HERE
+    # # use the first three points to create the template
+    # pts = np.array([p['pt'] for p in proposal])
+    # a, b, c = pts[:3]
+    # min_dist = np.min([np.linalg.norm(a-b), np.linalg.norm(a-c)])
+    # points = points_grid.copy()
+    # distances = cdist(points, points, 'euclidean')
+    # duplicates = []
+    # for p_idx, distance in enumerate(distances):
+    #     if p_idx in duplicates:
+    #         continue
+    #     duplicate_candidates = np.where(distance < min_dist * 0.3)[0]
+    #     for duplicate_candidate in duplicate_candidates:
+    #         if duplicate_candidate not in duplicates and duplicate_candidate != p_idx:
+    #             duplicates.append(duplicate_candidate)
+    # points = np.delete(points, duplicates, axis=0)
+    # ===========================================================================================
     # use the first three points to create the template
     pts = np.array([p['pt'] for p in proposal])
     a, b, c = pts[:3]
     min_dist = np.min([np.linalg.norm(a-b), np.linalg.norm(a-c)])
-    distances = cdist(points_grid, points_grid, 'euclidean')
-    points = []
-    duplicates = []
-    for pg_idx, distance in enumerate(distances):
-        if pg_idx in duplicates:
-            continue
-        duplicate_candidates = np.where(distance < min_dist)[0]
-        for duplicate_candidate in duplicate_candidates:
-            if duplicate_candidate not in duplicates and duplicate_candidate != pg_idx:
-                duplicates.append(duplicate_candidate)
-    points = np.delete(points_grid, duplicates, axis=0)
+    points = points_grid.copy()
+    # remove duplicates (pre-processing)
+    n_iteration = 0
+    while True:
+        distances = cdist(points, points, 'euclidean')
+        duplicates_a = []
+        duplicates_b = []
+        temp_points = points.copy()
+        for p_idx, distance in enumerate(distances):
+            if p_idx not in duplicates_a and p_idx not in duplicates_b:
+                if sorted(distance)[1] < min_dist * 0.4:
+                    nearest_p_idx = (distance).argsort()[1]
+                    if nearest_p_idx not in duplicates_a and nearest_p_idx not in duplicates_b:
+                        duplicates_a.append(p_idx)
+                        duplicates_b.append(nearest_p_idx)
+        if not duplicates_a and not duplicates_b:  # stop when no more duplicates are found
+            break
+        duplicates = duplicates_a + duplicates_b
+        points = np.delete(points, duplicates, axis=0)
+        for pair in zip(duplicates_a, duplicates_b):
+            a, b = pair
+            new_point = np.mean([temp_points[a], temp_points[b]], axis=0)
+            points = np.concatenate((points, [new_point]), axis=0)
+        n_iteration += 1
+    print('{} iterations ran during pre-processing'.format(n_iteration))
+    # interpolate missing points
+    distances = cdist(points, points, 'euclidean')
+    temp_points = points.copy()
+    for p_idx, distance in enumerate(distances):
+        for i in range(len(distances) - 1):
+            for j in range(i + 1, len(distances)):
+                if i == p_idx or j == p_idx:
+                    continue
+                if distance[i] < min_dist * 2.0 and distance[j] < min_dist * 2.0 and np.absolute(np.hypot(distance[i], distance[j]) - distances[i][j]) < 2.0:
+                    a = temp_points[p_idx]
+                    b = temp_points[i]
+                    c = temp_points[j]
+                    new_point = a + (b-a) + (c-a)
+                    points = np.concatenate((points, [new_point]), axis=0)
+    # remove duplicates (post-processing)
+    n_iteration = 0
+    while True:
+        distances = cdist(points, points, 'euclidean')
+        duplicates_a = []
+        duplicates_b = []
+        temp_points = points.copy()
+        for p_idx, distance in enumerate(distances):
+            if p_idx not in duplicates_a and p_idx not in duplicates_b:
+                if sorted(distance)[1] < min_dist * 0.4:
+                    nearest_p_idx = (distance).argsort()[1]
+                    if nearest_p_idx not in duplicates_a and nearest_p_idx not in duplicates_b:
+                        duplicates_a.append(p_idx)
+                        duplicates_b.append(nearest_p_idx)
+        if not duplicates_a and not duplicates_b:  # stop when no more duplicates are found
+            break
+        duplicates = duplicates_a + duplicates_b
+        points = np.delete(points, duplicates, axis=0)
+        for pair in zip(duplicates_a, duplicates_b):
+            a, b = pair
+            new_point = np.mean([temp_points[a], temp_points[b]], axis=0)
+            points = np.concatenate((points, [new_point]), axis=0)
+        n_iteration += 1
+    print('{} iterations ran during post-processing'.format(n_iteration))
     # END
 
     return points
